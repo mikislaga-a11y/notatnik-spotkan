@@ -1,6 +1,6 @@
 # Notatnik spotkań
 
-Aplikacja na telefon (PWA) do transkrypcji wewnętrznych spotkań. Rozpoznaje mówców, oznacza miejsca, w których kilka osób mówi naraz, robi podsumowanie i eksportuje je do PDF.
+Aplikacja na telefon (PWA) do transkrypcji wewnętrznych spotkań. Rozpoznaje mówców, robi podsumowanie i eksportuje je do PDF.
 
 **Adres:** https://mikislaga-a11y.github.io/notatnik-spotkan/
 
@@ -8,14 +8,13 @@ Aplikacja na telefon (PWA) do transkrypcji wewnętrznych spotkań. Rozpoznaje m�
 - **iPhone (Safari):** Udostępnij → „Do ekranu początkowego”
 - **Android (Chrome):** menu ⋮ → „Zainstaluj aplikację”
 
-Przy pierwszym uruchomieniu wklej klucz API OpenAI (https://platform.openai.com/api-keys).
+## Klucze (oba darmowe, bez karty)
+1. **AssemblyAI** do transkrypcji: https://www.assemblyai.com/dashboard/signup. Klucz jest w zakładce API Keys. Aplikacja używa serwerów w UE (`api.eu.assemblyai.com`).
+2. **Groq** do podsumowań: https://console.groq.com/keys → Create API Key.
 
 ## Prywatność
-- To repozytorium zawiera wyłącznie kod aplikacji, bez kluczy i danych.
-- Klucz API zapisuje się tylko w pamięci telefonu.
-- Nagrania, transkrypcje i podsumowania istnieją tylko w pamięci otwartej aplikacji i znikają po jej zamknięciu.
-- Audio jest wysyłane do OpenAI (`gpt-4o-transcribe-diarize`), które robi transkrypcję.
-
-## Do zapamiętania
-- Model `gpt-4o-transcribe-diarize` ma zapowiedziane wyłączenie na 26.02.2027. Przed tą datą trzeba zmienić stałą `TRANSCRIBE_MODEL` w `index.html`.
-- Model do podsumowań zmienia się w ustawieniach aplikacji (⚙).
+- Repozytorium zawiera wyłącznie kod aplikacji, bez kluczy i danych.
+- Klucze zapisują się tylko w pamięci telefonu.
+- Transkrypcje i podsumowania są zapisane tylko na telefonie i usuwają się automatycznie po 24 h. Nagranie jest kasowane z telefonu zaraz po transkrypcji.
+- AssemblyAI (serwery UE) nie używa nagrań do trenowania modeli. W panelu AssemblyAI (Settings → Data Controls) warto ustawić TTL na 1 dzień, żeby transkrypcje znikały też z ich serwerów.
+- Groq nie trenuje na danych z API. W panelu Groq (Settings → Data Controls) można włączyć Zero Data Retention.
