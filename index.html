@@ -95,8 +95,13 @@ a{color:var(--accent2)}
   color:#fff;padding:10px 16px;border-radius:12px;font-size:14px;z-index:50;max-width:90vw;text-align:center}
 .check{display:flex;align-items:center;gap:10px;margin:12px 0;font-size:15px}
 .check input{width:20px;height:20px}
+.spkrow{display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left}
+.spkrow label{margin:0;font-size:15px;color:var(--text);font-weight:600}
+.spkrow select{width:auto;min-width:140px;padding:10px 12px}
 dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:18px;width:min(92vw,520px);padding:18px;max-height:90vh;overflow:auto}
 dialog::backdrop{background:#000a}
+.diag{font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:10px;white-space:pre-wrap;word-break:break-word}
+.linkbtn{background:none;border:0;color:var(--accent2);font-size:14px;padding:10px 0 0;cursor:pointer;text-decoration:underline}
 </style>
 </head>
 <body>
@@ -129,6 +134,15 @@ dialog::backdrop{background:#000a}
   <section id="vHome" class="hidden">
     <div class="notice">&#128274; <b>Prywatnie:</b> transkrypcje i podsumowania są zapisane tylko na tym telefonie i <b>usuwają się automatycznie po 24 h</b>. Nagranie znika z telefonu zaraz po transkrypcji.</div>
     <div class="card" style="text-align:center">
+      <div class="spkrow">
+        <label for="spkSel">Ile osób będzie mówić?</label>
+        <select id="spkSel">
+          <option value="">Nie wiem</option><option value="2">2</option><option value="3">3</option><option value="4">4</option>
+          <option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option>
+          <option value="9">9</option><option value="10">10</option><option value="11">Więcej niż 10</option>
+        </select>
+      </div>
+      <p class="help" style="text-align:left;margin-top:8px">Podanie liczby osób poprawia rozpoznawanie, kto mówi. Dotyczy też wgranych plików.</p>
       <button class="recbig" id="btnRec"><span class="ring" id="ring"></span><span id="recLabel">Nagrywaj</span></button>
       <div class="timer" id="timer">00:00</div>
       <div class="meter"><i id="meter"></i></div>
@@ -158,6 +172,8 @@ dialog::backdrop{background:#000a}
       <div class="card" id="progressCard">
         <div style="display:flex;align-items:center;gap:10px"><div class="spinner" id="progSpin"></div><b id="progressText">&hellip;</b></div>
         <div class="bar hidden" id="progBarWrap"><i id="progBar"></i></div>
+        <div class="diag hidden" id="errDetail"></div>
+        <button class="linkbtn hidden" id="btnCopyErr">Kopiuj szczegóły błędu</button>
         <div style="height:12px" class="hidden" id="retryGap"></div>
         <button class="btn hidden" id="btnRetry">&#8635; Spróbuj ponownie</button>
       </div>
@@ -203,6 +219,10 @@ dialog::backdrop{background:#000a}
   <label for="setModel">Model do podsumowań (Groq)</label>
   <input id="setModel" type="text" spellcheck="false">
   <p class="help">Klucze i ustawienia są zapisane tylko na tym urządzeniu. Spotkania usuwają się automatycznie po 24 h.</p>
+  <div style="height:12px"></div>
+  <button class="btn" id="btnTest">&#128268; Sprawdź połączenie</button>
+  <div class="diag hidden" id="testOut"></div>
+  <button class="linkbtn hidden" id="btnCopyTest">Kopiuj wynik testu</button>
   <div style="height:12px"></div>
   <div class="row"><button class="btn" id="btnSetCancel">Anuluj</button><button class="btn primary" id="btnSetSave">Zapisz</button></div>
   <div style="height:10px"></div>
@@ -291,7 +311,7 @@ function newMeeting(source){
   const now=Date.now();
   return { id:uid(), createdAt:now, expiresAt:now+TTL_MS, source, status:'recording', phase:'', progress:null, error:null, errorKind:null,
     durationSec:0, mime:'', fileName:'', speakers:{}, segments:[], summary:null, summaryAt:null, aaiId:null, uploadUrl:null,
-    noDiarization:false, interrupted:false };
+    noDiarization:false, interrupted:false, spk:$('spkSel').value||'' };
 }
 
 /* otwarte spotkanie + bezpieczna aktualizacja (zawsze na świeżej kopii z bazy) */
@@ -360,6 +380,8 @@ function pickMime(){
 async function lockScreen(){ try{ if('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen') }catch{} }
 
 $('btnRec').onclick = ()=> rec ? stopRecording() : startRecording();
+$('spkSel').value = store.get('nt_spk','');                       // zapamiętana liczba rozmówców
+$('spkSel').onchange = ()=> store.set('nt_spk', $('spkSel').value);
 
 async function startRecording(){
   if(!cfg.aaiKey){ show('vSetup'); return }
@@ -394,6 +416,7 @@ async function startRecording(){
   await lockScreen();
   $('btnRec').classList.add('on'); $('recLabel').textContent='Zakończ';
   $('recHint').textContent='Nagrywam. Nagranie zapisuje się na bieżąco w telefonie.';
+  $('spkSel').disabled=true;
   $('uploadCard').classList.add('hidden');
   const buf = new Uint8Array(256);
   tick = setInterval(()=>{
@@ -414,6 +437,7 @@ async function stopRecording(){
   try{ wakeLock && wakeLock.release() }catch{} wakeLock=null;
   $('btnRec').classList.remove('on'); $('recLabel').textContent='Nagrywaj'; $('meter').style.width='0'; $('ring').style.opacity=0; $('timer').textContent='00:00';
   $('recHint').textContent='Połóż telefon na środku stołu. Ekran nie zgaśnie podczas nagrywania.';
+  $('spkSel').disabled=false;
   $('uploadCard').classList.remove('hidden');
   if(m) await openMeeting(m.id);
 }
@@ -431,13 +455,23 @@ $('fileIn').onchange = async e=>{
 
 /* ============ TRANSKRYPCJA: AssemblyAI (UE) ============ */
 async function fetchJSON(url,opts){
-  let res; try{ res = await fetch(url,opts) }catch{ throw netErr() }
-  const txt = await res.text(); let data=null; try{ data=JSON.parse(txt) }catch{}
+  let res; try{ res = await fetch(url,opts) }catch(e){ throw Object.assign(netErr(),{cause:e}) }
+  let txt=''; try{ txt = await res.text() }catch(e){ throw Object.assign(errOf('Nie udało się odczytać odpowiedzi serwera.','net'),{cause:e, http:res.status}) }
+  let data=null; try{ data=JSON.parse(txt) }catch{}
   return {ok:res.ok, status:res.status, data, txt};
+}
+async function fetchRetry(url,opts,tries=3){
+  let last; for(let i=0;i<tries;i++){ try{ return await fetchJSON(url,opts) }catch(e){ last=e; if(e.kind!=='net') throw e; await sleep(2500*(i+1)) } }
+  throw last;
+}
+function describeErr(e){
+  const c=e && e.cause;
+  return { name:e&&e.name, msg:e&&e.message, http:e&&e.http, cause:c?`${c.name}: ${c.message}`:undefined,
+    stack:String((c&&c.stack)||(e&&e.stack)||'').split('\n').slice(0,3).join(' | ').slice(0,300) };
 }
 function errMsg(r){ const d=r&&r.data; return String((d && ((d.error && (d.error.message||d.error)) || d.message || d.detail)) || (r&&r.txt) || ('HTTP '+(r&&r.status))).slice(0,220) }
 
-function aaiUpload(blob,onProgress){
+function aaiUploadXHR(blob,onProgress){
   return new Promise((res,rej)=>{
     const x=new XMLHttpRequest();
     x.open('POST',AAI+'/v2/upload');
@@ -447,23 +481,42 @@ function aaiUpload(blob,onProgress){
     x.onload=()=>{ let d=null; try{ d=JSON.parse(x.responseText) }catch{}
       if(x.status>=200 && x.status<300 && d && d.upload_url) return res(d.upload_url);
       if(x.status===401) return rej(keyErr('AssemblyAI'));
-      rej(new Error('AssemblyAI (wysyłka): '+((d&&d.error)||('HTTP '+x.status)))) };
-    x.onerror=()=>rej(netErr());
+      rej(Object.assign(new Error('AssemblyAI (wysyłka): '+((d&&d.error)||('HTTP '+x.status))),{http:x.status})) };
+    x.onerror=()=>rej(Object.assign(netErr(),{cause:new Error('XHR onerror, status '+x.status)}));
     x.send(blob);
   });
 }
+async function aaiUploadFetch(blob){
+  const r=await fetchRetry(AAI+'/v2/upload',{method:'POST',headers:{authorization:cfg.aaiKey,'content-type':'application/octet-stream'},body:blob},2);
+  if(r.ok && r.data && r.data.upload_url) return r.data.upload_url;
+  if(r.status===401) throw keyErr('AssemblyAI');
+  throw Object.assign(new Error('AssemblyAI (wysyłka): '+errMsg(r)),{http:r.status});
+}
+async function aaiUpload(blob,onProgress){
+  try{ return await aaiUploadXHR(blob,onProgress) }
+  catch(e){ if(e.kind==='key') throw e; console.warn('Wysyłka XHR nie wyszła, próbuję fetch',e); onProgress(0); return await aaiUploadFetch(blob) }
+}
 
-async function aaiCreate(audioUrl, detect){
+/* liczba rozmówców podana przed nagraniem: AssemblyAI zaleca minimum = liczba osób, maksimum o 2 wyżej */
+function speakerOptions(spk){
+  const n=parseInt(spk,10);
+  if(!n) return null;
+  if(n>10) return {min_speakers_expected:10, max_speakers_expected:30};
+  return {min_speakers_expected:n, max_speakers_expected:n+2};
+}
+async function aaiCreate(audioUrl, detect, spk){
   const base={audio_url:audioUrl, speaker_labels:true};
   if(cfg.lang && !detect) base.language_code=cfg.lang; else base.language_detection=true;
+  const so=speakerOptions(spk); if(so) base.speaker_options=so;
   const variants=[{...base,speech_models:['assemblyai-stt-3-7','universal-2']},{...base,speech_models:['universal-2']},base];
   let last=null;
   for(const body of variants){
-    const r=await fetchJSON(AAI+'/v2/transcript',{method:'POST',headers:{authorization:cfg.aaiKey,'content-type':'application/json'},body:JSON.stringify(body)});
+    const r=await fetchRetry(AAI+'/v2/transcript',{method:'POST',headers:{authorization:cfg.aaiKey,'content-type':'application/json'},body:JSON.stringify(body)});
     if(r.ok && r.data && r.data.id) return r.data.id;
     if(r.status===401) throw keyErr('AssemblyAI');
     last=r;
-    if(r.status===400 && !detect && /not available in this language|speaker_labels/i.test(errMsg(r))) return aaiCreate(audioUrl,true);
+    if(r.status===400 && so && /speaker_options|speakers_expected/i.test(errMsg(r))) return aaiCreate(audioUrl,detect,null);
+    if(r.status===400 && !detect && /not available in this language|speaker_labels/i.test(errMsg(r))) return aaiCreate(audioUrl,true,spk);
     if(r.status!==400) break;
   }
   throw new Error('AssemblyAI: '+errMsg(last));
@@ -489,7 +542,7 @@ async function aaiPoll(id){
       const msg=String(t.error||'nieznany błąd');
       m=await DB.get(id);
       if(!retried && m && m.uploadUrl && /speaker|language/i.test(msg)){
-        retried=true; tid=await aaiCreate(m.uploadUrl,true); await update(id,x=>{ x.aaiId=tid }); continue;
+        retried=true; tid=await aaiCreate(m.uploadUrl,true,m.spk); await update(id,x=>{ x.aaiId=tid }); continue;
       }
       throw new Error('AssemblyAI: '+msg);
     }
@@ -531,8 +584,10 @@ async function runQueue(){
   } finally { qBusy=false }
 }
 
+const STAGES={read:'Odczyt nagrania z telefonu', upload:'Wysyłka nagrania', create:'Zlecenie transkrypcji', poll:'Pobieranie transkrypcji', save:'Zapis wyniku'};
 async function processMeeting(id){
   let m=await DB.get(id); if(!m) return;
+  let stage='read';
   try{
     if(!cfg.aaiKey) throw errOf('Dodaj klucz AssemblyAI w ustawieniach.','key');
     if(m.status==='pending'){
@@ -540,23 +595,36 @@ async function processMeeting(id){
         m=await update(id,x=>{ x.phase='Wysyłam nagranie…'; x.progress=0 }); if(!m) return;
         const bufs=await DB.chunks(id);
         if(!bufs.length) throw errOf('Brak zapisanego nagrania w telefonie.','fatal');
-        const blob=new Blob(bufs,{type:m.mime||'application/octet-stream'});
+        let total=0; for(const b of bufs) total+=b.byteLength;
+        const all=new Uint8Array(total); let off=0; for(const b of bufs){ all.set(new Uint8Array(b),off); off+=b.byteLength }
+        const blob=new Blob([all],{type:'application/octet-stream'});
+        stage='upload';
         let lastP=-1;
-        const url=await aaiUpload(blob,p=>{ if(p-lastP>=0.02||p>=1){ lastP=p; setPhaseLive(id,`Wysyłam nagranie… ${Math.round(p*100)}%`,p) } });
+        const url=await aaiUpload(blob,p=>{ if(p-lastP>=0.02||p>=1||p===0){ lastP=p; setPhaseLive(id,`Wysyłam nagranie… ${Math.round(p*100)}%`,p) } });
         m=await update(id,x=>{ x.uploadUrl=url; x.progress=null }); if(!m) return;
       }
+      stage='create';
       m=await update(id,x=>{ x.phase='Zlecam transkrypcję…'; x.progress=null }); if(!m) return;
-      const tid=await aaiCreate(m.uploadUrl,false);
+      const tid=await aaiCreate(m.uploadUrl,false,m.spk);
       m=await update(id,x=>{ x.aaiId=tid; x.status='transcribing'; x.phase='Transkrybuję…' }); if(!m) return;
     }
     if(m.status==='transcribing'){
+      stage='poll';
       const t=await aaiPoll(id);
-      const done=await update(id,x=>{ ingest(x,t); x.status='done'; x.phase=''; x.error=null; x.errorKind=null; x.uploadUrl=null; x.progress=null });
+      stage='save';
+      const done=await update(id,x=>{ ingest(x,t); x.status='done'; x.phase=''; x.error=null; x.errorKind=null; x.errorDetail=null; x.uploadUrl=null; x.progress=null });
       if(done) await DB.delChunks(id);   // nagranie znika z telefonu zaraz po transkrypcji
     }
   }catch(e){
     console.error(e);
-    await update(id,x=>{ x.error=e.message||String(e); x.errorKind=e.kind||'other'; x.phase=''; x.progress=null; if(e.kind==='fatal') x.status='failed' });
+    const plain = e.kind==='key' || e.kind==='fatal' || e.kind==='expired';
+    const what = (e.name && e.name!=='Error' ? e.name+': ' : '') + (e.message || 'nieznany błąd');
+    await update(id,x=>{
+      x.error = plain ? e.message : `${STAGES[stage]}: ${what}`;
+      x.errorKind = e.kind||'other';
+      x.errorDetail = Object.assign({stage, at:new Date().toISOString(), ua:navigator.userAgent}, describeErr(e));
+      x.phase=''; x.progress=null; if(e.kind==='fatal') x.status='failed';
+    });
   }
 }
 
@@ -572,6 +640,47 @@ async function clearErrors(kind){
   runQueue();
 }
 $('btnRetry').onclick = ()=>{ if(cur) retryMeeting(cur.id) };
+
+/* ============ DIAGNOSTYKA ============ */
+function detailText(d){
+  if(!d) return '';
+  return [`etap: ${d.stage}`, `błąd: ${d.name||''} ${d.msg||''}`.trim(), d.http?`HTTP: ${d.http}`:'', d.cause?`przyczyna: ${d.cause}`:'',
+    d.stack?`stos: ${d.stack}`:'', `czas: ${d.at}`, `przeglądarka: ${d.ua}`].filter(Boolean).join('\n');
+}
+async function copyText(t){
+  try{ await navigator.clipboard.writeText(t); toast('Skopiowane. Wklej to w rozmowie z Claude.') }
+  catch{ const ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); toast('Skopiowane') }catch{ toast('Nie udało się skopiować, zrób zrzut ekranu') } ta.remove() }
+}
+$('btnCopyErr').onclick = ()=>{ if(cur && cur.errorDetail) copyText(detailText(cur.errorDetail)) };
+$('btnCopyTest').onclick = ()=> copyText($('testOut').textContent);
+$('btnTest').onclick = async ()=>{
+  const out=$('testOut'), b=$('btnTest'), lines=[];
+  const key=$('setAai').value.trim()||cfg.aaiKey, gkey=$('setGroq').value.trim()||cfg.groqKey;
+  const paint=()=>{ out.textContent=lines.join('\n') };
+  out.classList.remove('hidden'); $('btnCopyTest').classList.add('hidden'); b.disabled=true;
+  const step=async(label,fn)=>{
+    lines.push('… '+label); paint();
+    let line;
+    try{ const r=String(await fn()); line=(/^HTTP 2/.test(r)||r==='OK'?'✓ ':'✗ ')+label+': '+r }
+    catch(e){ const d=describeErr(e); line='✗ '+label+': '+[d.name,d.msg,d.cause,d.stack].filter(Boolean).join(' | ') }
+    lines[lines.length-1]=line; paint();
+  };
+  lines.push('przeglądarka: '+navigator.userAgent);
+  lines.push((DB.mem?'✗':'✓')+' pamięć telefonu: '+(DB.mem?'niedostępna (dane tylko do zamknięcia)':'OK'));
+  lines.push('format nagrania: '+(pickMime()||'domyślny'));
+  if(!key) lines.push('✗ brak klucza AssemblyAI');
+  else{
+    await step('AssemblyAI, klucz', async()=>{ const r=await fetchJSON(AAI+'/v2/transcript?limit=1',{headers:{authorization:key}}); return 'HTTP '+r.status+(r.ok?'':' '+errMsg(r)) });
+    await step('AssemblyAI, wysyłka (XHR)', ()=>new Promise((ok,ko)=>{ const x=new XMLHttpRequest(); x.open('POST',AAI+'/v2/upload');
+      x.setRequestHeader('authorization',key); x.setRequestHeader('content-type','application/octet-stream'); x.upload.onprogress=()=>{};
+      x.onload=()=>ok('HTTP '+x.status+(x.status>=300?' '+String(x.responseText).slice(0,120):'')); x.onerror=()=>ko(new Error('XHR onerror, status '+x.status)); x.send(new Blob([new Uint8Array(2048)])) }));
+    await step('AssemblyAI, wysyłka (fetch)', async()=>{ const r=await fetchJSON(AAI+'/v2/upload',{method:'POST',headers:{authorization:key,'content-type':'application/octet-stream'},body:new Blob([new Uint8Array(2048)])}); return 'HTTP '+r.status+(r.ok?'':' '+errMsg(r)) });
+  }
+  if(gkey) await step('Groq, klucz', async()=>{ const r=await fetchJSON('https://api.groq.com/openai/v1/models',{headers:{Authorization:'Bearer '+gkey}}); return 'HTTP '+r.status+(r.ok?'':' '+errMsg(r)) });
+  else lines.push('– Groq: brak klucza (podsumowania nie zadziałają)');
+  paint(); b.disabled=false; $('btnCopyTest').classList.remove('hidden');
+};
 window.addEventListener('online', ()=> clearErrors('net'));
 
 /* ============ LISTA SPOTKAŃ ============ */
@@ -606,7 +715,8 @@ async function openMeeting(id){
   show('vMeeting'); cur=m; switchTab('t'); renderMeeting();
 }
 function renderMeeting(){ if(!cur) return; renderMeta(); renderProgress(); renderTranscript(); renderSummary() }
-function renderMeta(){ if(!cur) return; $('mMeta').textContent = `${fmtDate(cur.createdAt)}${cur.durationSec?' · '+fmt(cur.durationSec):''} · usunie się za ${fmtLeft(cur.expiresAt-Date.now())}` }
+const spkLabel = s => s ? (s==='11' ? 'ponad 10 osób' : s+' os.') : '';
+function renderMeta(){ if(!cur) return; $('mMeta').textContent = `${fmtDate(cur.createdAt)}${cur.durationSec?' · '+fmt(cur.durationSec):''}${cur.spk?' · '+spkLabel(cur.spk):''} · usunie się za ${fmtLeft(cur.expiresAt-Date.now())}` }
 function renderProgress(){
   const m=cur; if(!m) return;
   let text='', spin=true, err=false, bar=null, retry=false;
@@ -619,6 +729,9 @@ function renderProgress(){
   else { $('progressCard').classList.add('hidden'); return }
   $('progressCard').classList.remove('hidden');
   $('progressText').textContent=text; $('progressText').style.color=err?'var(--err)':'';
+  const d = err ? m.errorDetail : null;
+  $('errDetail').classList.toggle('hidden',!d); $('btnCopyErr').classList.toggle('hidden',!d);
+  if(d) $('errDetail').textContent = detailText(d);
   $('progSpin').classList.toggle('hidden',!spin);
   $('progBarWrap').classList.toggle('hidden',bar===null); if(bar!==null) $('progBar').style.width=Math.round(bar*100)+'%';
   $('btnRetry').classList.toggle('hidden',!retry); $('retryGap').classList.toggle('hidden',!retry);
@@ -688,15 +801,19 @@ const SCHEMA = `{
  "otwarte_kwestie": ["sprawy nierozstrzygnięte lub do wyjaśnienia"],
  "sporne_momenty": ["miejsca, gdzie kilka osób mówiło naraz lub była wyraźna różnica zdań, krótko, czego dotyczyły"]
 }`;
+const NAMES_RULE = `Jeśli ktoś wyraźnie się przedstawia (np. „cześć, tu Ania”), używaj jego imienia zamiast etykiety „Osoba N” we wszystkich sekcjach. Gdy nie masz pewności, kto to jest, zostaw etykietę.`;
 const SYS_FULL = `Jesteś asystentem, który robi zwięzłe, rzeczowe podsumowania wewnętrznych spotkań zespołu. Piszesz po polsku.
 Dostajesz transkrypcję z etykietami mówców (mogą to być imiona albo „Osoba N”). Transkrypcja automatyczna może zawierać błędy, więc interpretuj rozsądnie i niczego nie zmyślaj.
+${NAMES_RULE}
 Zwróć WYŁĄCZNIE obiekt JSON o strukturze:
 ${SCHEMA}
 Puste sekcje zwracaj jako pustą listę.`;
 const SYS_PART = `Jesteś asystentem, który analizuje wewnętrzne spotkania zespołu. Piszesz po polsku.
 Dostajesz JEDEN FRAGMENT dłuższej transkrypcji z etykietami mówców. Transkrypcja automatyczna może zawierać błędy, więc interpretuj rozsądnie i niczego nie zmyślaj.
+${NAMES_RULE}
 Zwróć WYŁĄCZNIE obiekt JSON:
 {
+ "imiona_mowcow": {"Osoba N": "imię, tylko jeśli ta osoba się przedstawiła"},
  "streszczenie_fragmentu": "2-3 zdania o tym fragmencie",
  "uczestnicy": ["etykiety mówców z fragmentu"],
  "tematy": [{"temat":"…","punkty":["…"]}],
@@ -708,6 +825,7 @@ Zwróć WYŁĄCZNIE obiekt JSON:
 Puste sekcje zwracaj jako pustą listę.`;
 const SYS_REDUCE = `Jesteś asystentem, który robi zwięzłe, rzeczowe podsumowania wewnętrznych spotkań zespołu. Piszesz po polsku.
 Dostajesz listę częściowych analiz (JSON) kolejnych fragmentów JEDNEGO spotkania, w kolejności chronologicznej. Połącz je w jedno spójne podsumowanie całego spotkania: scal powtarzające się tematy, usuń duplikaty decyzji i zadań, zachowaj osoby i terminy. Niczego nie zmyślaj.
+Pole „imiona_mowcow” mówi, kim są osoby oznaczone etykietami. Jeśli w którymkolwiek fragmencie ustalono imię (np. Osoba 2 = Ania), używaj go konsekwentnie w całym podsumowaniu.
 Zwróć WYŁĄCZNIE obiekt JSON o strukturze:
 ${SCHEMA}
 Puste sekcje zwracaj jako pustą listę.`;
